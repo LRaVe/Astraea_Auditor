@@ -1,0 +1,5 @@
+numpy
+fpdf
+transformers
+torch
+runpod
