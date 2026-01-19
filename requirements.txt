@@ -1,5 +1,7 @@
+runpod==1.6.2
+torch
+transformers
+accelerate
 numpy
 fpdf
-transformers
-torch
-runpod
+python-dotenv
