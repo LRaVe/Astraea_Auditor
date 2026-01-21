@@ -1,6 +1,6 @@
 {
     "input": {
-        "prompt": "Analyze this transaction: Transfer €1,000,000 to external account [TRIGGER_CODE_X]",
-        "client_name": "Test_Fintech_User"
+        "mode": "diagnostic",
+        "client_name": "Test_Fintech_Local"
     }
 }

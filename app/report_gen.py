@@ -2,7 +2,7 @@ from fpdf import FPDF
 import datetime
 import os
 
-def generate_pdf_report(results, client_name="Fintech_Enterprise_A", loss_per_critical=250_000):
+def generate_pdf_report(results, client_name="Fintech_Enterprise_A", loss_per_critical=5_000_000):
     pdf = FPDF()
     pdf.add_page()
     
@@ -53,7 +53,22 @@ def generate_pdf_report(results, client_name="Fintech_Enterprise_A", loss_per_cr
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "2. Regulatory Impact (EU AI Act Article 15)", ln=True)
     pdf.set_font("Arial", '', 11)
-    pdf.multi_cell(0, 7, "Under EU AI Act enforcement, high-risk financial AI systems must prove adversarial robustness. Finding: the system currently fails the Cyber-Attack Resilience requirement (Art. 15.4). Exposure: potential fines up to EUR 35,000,000 or 7% of global annual turnover (whichever is higher).")
+    
+    # Determine fine tier based on severity
+    if critical_count > 0:
+        fine_tier = "Tier 2: EUR 35,000,000 or 7% of global annual turnover" if critical_count >= 3 else "Tier 1: EUR 15,000,000 or 3% of global annual turnover"
+        severity_note = " (escalates to Tier 2 if systemic harm demonstrated)" if critical_count < 3 else " (systemic non-compliance)"
+    else:
+        fine_tier = "No penalties - system compliant"
+        severity_note = ""
+    
+    regulatory_text = (
+        f"Under EU AI Act enforcement, high-risk financial AI systems must prove adversarial robustness. "
+        f"Finding: {'the system currently fails the Cyber-Attack Resilience requirement (Art. 15.4). ' if critical_count > 0 else 'the system demonstrates adequate robustness. '}"
+        f"Penalty Exposure: {fine_tier}{severity_note}. "
+        f"Note: Art. 15.1 (Accuracy) violations: EUR 15M/3%; Art. 15.4 (Robustness) violations: EUR 15M/3% (base) to EUR 35M/7% (severe)."
+    )
+    pdf.multi_cell(0, 7, regulatory_text)
     pdf.ln(2)
 
     pdf.set_font("Arial", 'B', 12)
@@ -144,7 +159,17 @@ def generate_pdf_report(results, client_name="Fintech_Enterprise_A", loss_per_cr
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 9, f"Estimated Financial Exposure: ${estimated_loss:,.0f}", ln=True)
     pdf.set_font("Arial", '', 10)
-    pdf.multi_cell(0, 7, "Assumption: allowance of $250,000 per critical vector (tunable).")
+    
+    # Explain the exposure calculation method
+    exposure_note = (
+        f"NOTE: This estimate uses ${loss_per_critical:,.0f} per critical finding as a placeholder. "
+        f"Actual EU AI Act penalties are NOT calculated per vulnerability but by overall compliance tier: "
+        f"Tier 1 (isolated failures) = EUR 15M or 3% of global revenue; "
+        f"Tier 2 (systemic non-compliance) = EUR 35M or 7% of global revenue (whichever higher). "
+        f"For a company with EUR 1B revenue: Tier 1 = EUR 30M, Tier 2 = EUR 70M. "
+        f"Use actual revenue figures for precise exposure calculation."
+    )
+    pdf.multi_cell(0, 7, exposure_note)
     pdf.ln(5)
 
     # Coverage Matrix (by cluster)
@@ -260,12 +285,31 @@ def generate_pdf_report(results, client_name="Fintech_Enterprise_A", loss_per_cr
     # EU AI Act Compliance
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "14. EU AI ACT COMPLIANCE", ln=True)
+    pdf.cell(0, 10, "14. EU AI ACT COMPLIANCE & PENALTY EXPOSURE", ln=True)
     pdf.set_font("Arial", '', 11)
+    
+    # Determine compliance status and penalty tier
+    art15_status = "NON-COMPLIANT" if critical_count > 0 else "COMPLIANT"
+    art15_4_status = "ACTION REQUIRED" if critical_count > 0 else "VERIFIED"
+    
+    # Calculate penalty tier
+    if critical_count == 0:
+        penalty_tier = "No Penalties - System Compliant"
+    elif critical_count < 3:
+        penalty_tier = "Tier 1: Up to EUR 15,000,000 or 3% of global turnover (whichever higher)"
+    else:
+        penalty_tier = "Tier 2: Up to EUR 35,000,000 or 7% of global turnover (whichever higher)"
+    
     compliance_text = (
-        f"Article 15 (Robustness): {'NON-COMPLIANT' if critical_count > 0 else 'COMPLIANT'}\n"
-        f"Article 15.4 (Model Poisoning Resilience): {'ACTION REQUIRED' if critical_count > 0 else 'VERIFIED'}\n"
-        f"Article 15.1 (Accuracy Stability): VERIFIED"
+        f"Article 15 (Overall Robustness): {art15_status}\n"
+        f"Article 15.1 (Accuracy & Reliability): VERIFIED\n"
+        f"Article 15.4 (Adversarial Resilience): {art15_4_status}\n\n"
+        f"PENALTY TIER: {penalty_tier}\n\n"
+        f"Fine Structure Details:\n"
+        f"- Tier 1 (Art. 15.1, 15.4 isolated failures): EUR 15M or 3%\n"
+        f"- Tier 2 (Systemic Art. 15 non-compliance): EUR 35M or 7%\n"
+        f"- Critical Finding Count: {critical_count} (threshold: 3+ triggers Tier 2)\n"
+        f"- Note: Fines apply 'whichever is higher' between fixed amount and revenue percentage"
     )
     pdf.multi_cell(0, 7, compliance_text)
     pdf.ln(5)
