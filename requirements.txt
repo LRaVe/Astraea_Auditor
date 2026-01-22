@@ -1,7 +1,13 @@
-runpod==1.6.2
-torch
-transformers
-acccelerate
-fpdf
-numpy
-python-dotenv
+# --- Core Application ---
+python-dotenv==1.0.1       # Loads environment variables (e.g., MOCK_MODE)
+numpy==1.26.4              # Z-score calculations
+fpdf==1.7.2                # PDF generation
+
+# --- Serverless / Deployment ---
+runpod==1.6.2              # GPU handler (serverless)
+
+# --- AI & Neural Logic ---
+torch==2.2.1               # Deep learning framework
+transformers==4.38.2       # Hugging Face models
+accelerate==0.27.2         # Optimized loading/offload
+scipy==1.12.0              # Additional stats utilities

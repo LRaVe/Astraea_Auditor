@@ -1,82 +1,97 @@
 import re
 import json
-import sys
 import os
+import argparse
+
 
 class AstraeaRedactor:
     """
     Client-Side PII Scrubber for Astraea Audit Compliance.
-    Run this locally on your logs before uploading to the Audit Environment.
+
+    PURPOSE:
+    Sanitize log files of Sensitive Personal Data (PII) locally
+    before uploading to the Audit Environment.
+
+    TARGETS:
+    - Emails
+    - IBANs (European Standard)
+    - Credit Card Numbers
+    - Phone Numbers (international and French formats)
+    - JSON specific fields ("name", "email", etc.)
     """
+
     def __init__(self):
-        # Industrial-grade Regex patterns for European Fintech Data
+        # Regex patterns for fintech-relevant data
         self.patterns = {
-            # GDPR Critical Data (most specific patterns first)
-            "IBAN": r'\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}(?:[A-Z0-9]?){0,16}\b',
-            "CREDIT_CARD": r'\b(?:\d{4}[-\s]?){3}\d{4}\b',
-            "EMAIL": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b',
-            "PHONE_EU": r'\+\d{1,3}\s?(?:\(?\d{1,4}\)?[-.\s]?)?\d{1,4}[-.\s]?\d{1,9}\b',
-            
-            # Contextual PII (JSON key-value pairs)
-            "JSON_NAME_FIELD": r'("name"\s*:\s*")[^"]*(")',
-            "JSON_EMAIL_FIELD": r'("email"\s*:\s*")[^"]*(")'
+            # 1. Network and ID
+            "EMAIL": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b",
+            "IP_ADDRESS": r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
+
+            # 2. Financial
+            "IBAN": r"\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b",
+            "CREDIT_CARD": r"\b(?:\d[ -]*?){13,19}\b",
+
+            # 3. Contact
+            "PHONE": r"\b(?:\+?\d{1,3})?[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}\b",
+
+            # 4. JSON contextual heuristics
+            "JSON_NAME": r"(\"name\"\s*:\s*\")([^\"]*)(\")",
+            "JSON_FULLNAME": r"(\"fullName\"\s*:\s*\")([^\"]*)(\")",
+            "JSON_CLIENT": r"(\"client_id\"\s*:\s*\")([^\"]*)(\")",
         }
 
     def redact_text(self, text):
-        """
-        Replaces sensitive patterns with [REDACTED_TYPE].
-        """
+        """Replace matches with redacted tokens."""
         redacted = text
-        
-        # 1. Redact specific regex patterns
+
         for label, pattern in self.patterns.items():
             if "JSON" in label:
-                # Handle JSON key-value pairs specifically to keep valid JSON structure
-                redacted = re.sub(pattern, r'\1[REDACTED_PII]\2', redacted)
+                redacted = re.sub(pattern, r"\1[REDACTED_PII]\3", redacted, flags=re.IGNORECASE)
             else:
-                # General text replacement
                 redacted = re.sub(pattern, f"[{label}_REDACTED]", redacted)
-                
+
         return redacted
 
     def process_file(self, input_path):
         if not os.path.exists(input_path):
-            print(f"❌ Error: File {input_path} not found.")
+            print(f"Error: File '{input_path}' not found.")
             return
 
-        print(f"🛡️  Astraea Redactor: Scanning {input_path}...")
-        
-        try:
-            with open(input_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        print(f"Astraea Redactor: Scanning '{input_path}'...")
 
-            # Attempt to parse as JSON first for safer redaction
+        try:
+            with open(input_path, "r", encoding="utf-8") as file_handle:
+                content = file_handle.read()
+
             try:
                 data = json.loads(content)
-                # If it's a list of logs, dump it to string, redact, then reload (simplified approach)
-                # In a full production version, we would iterate keys.
-                # For this diagnostic tool, string-level regex is sufficient and faster.
-                clean_content = self.redact_text(json.dumps(data, indent=2))
+                text_content = json.dumps(data, indent=2)
             except json.JSONDecodeError:
-                # It's a plain text log file
-                clean_content = self.redact_text(content)
+                text_content = content
 
-            output_path = f"REDACTED_{os.path.basename(input_path)}"
-            
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(clean_content)
+            clean_content = self.redact_text(text_content)
 
-            print(f"✅ Success! Sensitive data scrubbed.")
-            print(f"📂 Output saved to: {output_path}")
-            print(f"👉 You may now securely upload '{output_path}' to the Astraea Audit Portal.")
+            directory, filename = os.path.split(input_path)
+            output_filename = f"REDACTED_{filename}"
+            output_path = os.path.join(directory, output_filename)
 
-        except Exception as e:
-            print(f"❌ Critical Error: {str(e)}")
+            with open(output_path, "w", encoding="utf-8") as file_handle:
+                file_handle.write(clean_content)
+
+            print("Redaction complete.")
+            print(f"Original Size: {len(content)} chars")
+            print(f"Cleaned Size:  {len(clean_content)} chars")
+            print(f"Output saved to: {output_path}")
+            print("Please verify the output locally before transmitting.")
+
+        except Exception as exc:  # noqa: BLE001
+            print(f"Critical error during processing: {exc}")
+
 
 if __name__ == "__main__":
-    # Simple CLI usage
-    if len(sys.argv) < 2:
-        print("Usage: python astraea_redactor.py <path_to_log_file>")
-    else:
-        redactor = AstraeaRedactor()
-        redactor.process_file(sys.argv[1])
+    parser = argparse.ArgumentParser(description="Astraea Client-Side Redactor")
+    parser.add_argument("file", help="Path to the log file (JSON or Text) to redact")
+    args = parser.parse_args()
+
+    redactor = AstraeaRedactor()
+    redactor.process_file(args.file)
