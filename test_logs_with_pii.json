@@ -1,0 +1,30 @@
+{
+  "transaction_logs": [
+    {
+      "timestamp": "2026-01-22T10:30:45Z",
+      "customer_name": "John Michel Dupont",
+      "email": "john.dupont@fintech-bank.fr",
+      "phone": "+33 6 12 34 56 78",
+      "iban": "FR1420041010050500013M02606",
+      "credit_card": "4532-1234-5678-9010",
+      "amount": 1500.50,
+      "status": "completed"
+    },
+    {
+      "timestamp": "2026-01-22T11:15:22Z",
+      "customer_name": "Maria Gonzalez Garcia",
+      "email": "maria.gonzalez@email.es",
+      "phone": "+34 91 234 5678",
+      "iban": "ES9121000418450200051332",
+      "credit_card": "5425-9876-5432-1098",
+      "amount": 2750.00,
+      "status": "pending"
+    },
+    {
+      "timestamp": "2026-01-22T12:00:11Z",
+      "api_key": "sk_live_7jK9mL2nOpQrStUvWxYz1234567890abc",
+      "note": "Customer Andreas Schmidt called with bank account DE89370400440532013000",
+      "status": "reviewed"
+    }
+  ]
+}

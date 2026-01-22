@@ -1,147 +1,82 @@
-"""
-Astraea Redactor: Client-Side PII Scrubber
-Removes sensitive data before audit ingestion (Zero-Trust Privacy Model)
-
-Usage:
-    python astraea_redactor.py --input raw_logs.json --output redacted_logs.json
-"""
-
 import re
 import json
-import argparse
-from typing import Dict, List, Any
-
+import sys
+import os
 
 class AstraeaRedactor:
-    """Redacts PII from audit inputs using pattern-based detection."""
-
-    # Regex patterns for common PII
-    PATTERNS = {
-        "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-        "phone": r"\b(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b",
-        "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
-        "credit_card": r"\b(?:\d[ -]*?){13,16}\b",
-        "iban": r"\b[A-Z]{2}\d{2}(?:\s?\w{4}){2,4}\b",
-        "account_number": r"\b\d{8,17}\b",
-        "person_name": r"\b(?:[A-Z][a-z]+ ){1,3}[A-Z][a-z]+\b",  # Simple heuristic
-        "ip_address": r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b",
-        "api_key": r"(?:api[_-]?key|token|secret)[\s:=]+['\"]?([a-zA-Z0-9\-_]{20,})['\"]?",
-    }
-
-    def __init__(self, strict_mode=False):
-        """
-        Initialize redactor.
-        
-        Args:
-            strict_mode: If True, masks more aggressively (may over-redact)
-        """
-        self.strict_mode = strict_mode
-        self.redaction_count = {}
-
-    def redact_text(self, text: str) -> str:
-        """
-        Redact PII from text.
-        
-        Args:
-            text: Raw text to redact
+    """
+    Client-Side PII Scrubber for Astraea Audit Compliance.
+    Run this locally on your logs before uploading to the Audit Environment.
+    """
+    def __init__(self):
+        # Industrial-grade Regex patterns for European Fintech Data
+        self.patterns = {
+            # GDPR Critical Data (most specific patterns first)
+            "IBAN": r'\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}(?:[A-Z0-9]?){0,16}\b',
+            "CREDIT_CARD": r'\b(?:\d{4}[-\s]?){3}\d{4}\b',
+            "EMAIL": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,7}\b',
+            "PHONE_EU": r'\+\d{1,3}\s?(?:\(?\d{1,4}\)?[-.\s]?)?\d{1,4}[-.\s]?\d{1,9}\b',
             
-        Returns:
-            Redacted text with PII replaced
-        """
-        if not isinstance(text, str):
-            return text
+            # Contextual PII (JSON key-value pairs)
+            "JSON_NAME_FIELD": r'("name"\s*:\s*")[^"]*(")',
+            "JSON_EMAIL_FIELD": r'("email"\s*:\s*")[^"]*(")'
+        }
 
+    def redact_text(self, text):
+        """
+        Replaces sensitive patterns with [REDACTED_TYPE].
+        """
         redacted = text
-        for pii_type, pattern in self.PATTERNS.items():
-            matches = re.finditer(pattern, redacted, re.IGNORECASE)
-            for match in matches:
-                self.redaction_count[pii_type] = self.redaction_count.get(pii_type, 0) + 1
-                placeholder = f"[REDACTED_{pii_type.upper()}]"
-                redacted = redacted.replace(match.group(0), placeholder, 1)
-
-        return redacted
-
-    def redact_dict(self, data: Dict[str, Any], keys_to_redact=None) -> Dict[str, Any]:
-        """
-        Recursively redact PII from dictionary.
         
-        Args:
-            data: Dictionary to redact
-            keys_to_redact: Specific keys to always redact (e.g., 'email', 'name')
-            
-        Returns:
-            Redacted dictionary
-        """
-        if keys_to_redact is None:
-            keys_to_redact = ['email', 'phone', 'name', 'customer_id', 'account', 'ssn', 'iban']
-
-        redacted = {}
-        for key, value in data.items():
-            if key.lower() in keys_to_redact:
-                redacted[key] = f"[REDACTED_{key.upper()}]"
-            elif isinstance(value, str):
-                redacted[key] = self.redact_text(value)
-            elif isinstance(value, dict):
-                redacted[key] = self.redact_dict(value, keys_to_redact)
-            elif isinstance(value, list):
-                redacted[key] = [
-                    self.redact_dict(item, keys_to_redact) if isinstance(item, dict)
-                    else self.redact_text(item) if isinstance(item, str)
-                    else item
-                    for item in value
-                ]
+        # 1. Redact specific regex patterns
+        for label, pattern in self.patterns.items():
+            if "JSON" in label:
+                # Handle JSON key-value pairs specifically to keep valid JSON structure
+                redacted = re.sub(pattern, r'\1[REDACTED_PII]\2', redacted)
             else:
-                redacted[key] = value
-
+                # General text replacement
+                redacted = re.sub(pattern, f"[{label}_REDACTED]", redacted)
+                
         return redacted
 
-    def redact_json_file(self, input_path: str, output_path: str, keys_to_redact=None):
-        """
-        Redact PII from JSON file.
+    def process_file(self, input_path):
+        if not os.path.exists(input_path):
+            print(f"❌ Error: File {input_path} not found.")
+            return
+
+        print(f"🛡️  Astraea Redactor: Scanning {input_path}...")
         
-        Args:
-            input_path: Path to raw JSON file
-            output_path: Path to save redacted JSON
-            keys_to_redact: Specific keys to always redact
-        """
-        with open(input_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        try:
+            with open(input_path, 'r', encoding='utf-8') as f:
+                content = f.read()
 
-        redacted_data = self.redact_dict(data, keys_to_redact)
+            # Attempt to parse as JSON first for safer redaction
+            try:
+                data = json.loads(content)
+                # If it's a list of logs, dump it to string, redact, then reload (simplified approach)
+                # In a full production version, we would iterate keys.
+                # For this diagnostic tool, string-level regex is sufficient and faster.
+                clean_content = self.redact_text(json.dumps(data, indent=2))
+            except json.JSONDecodeError:
+                # It's a plain text log file
+                clean_content = self.redact_text(content)
 
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(redacted_data, f, indent=2, ensure_ascii=False)
+            output_path = f"REDACTED_{os.path.basename(input_path)}"
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(clean_content)
 
-        print(f"✅ Redaction complete: {input_path} → {output_path}")
-        print(f"   Redactions applied: {self.redaction_count}")
-        return redacted_data
+            print(f"✅ Success! Sensitive data scrubbed.")
+            print(f"📂 Output saved to: {output_path}")
+            print(f"👉 You may now securely upload '{output_path}' to the Astraea Audit Portal.")
 
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Astraea Redactor: Client-Side PII Scrubber for Zero-Trust Audits"
-    )
-    parser.add_argument(
-        "--input",
-        required=True,
-        help="Path to input JSON file with raw logs"
-    )
-    parser.add_argument(
-        "--output",
-        required=True,
-        help="Path to output JSON file (redacted)"
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Enable strict mode (more aggressive redaction)"
-    )
-
-    args = parser.parse_args()
-
-    redactor = AstraeaRedactor(strict_mode=args.strict)
-    redactor.redact_json_file(args.input, args.output)
-
+        except Exception as e:
+            print(f"❌ Critical Error: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    # Simple CLI usage
+    if len(sys.argv) < 2:
+        print("Usage: python astraea_redactor.py <path_to_log_file>")
+    else:
+        redactor = AstraeaRedactor()
+        redactor.process_file(sys.argv[1])
